@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinelml"
+version = "1.0.0"
+description = "End-to-End Fraud Detection and ML Model Monitoring Platform"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "SentinelML Engineering Team", email = "student@sentinelml.dev" }
+]
+license = { text = "MIT" }
+dependencies = [
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "scikit-learn>=1.4.0",
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.7.0",
+    "mlflow>=2.13.0",
+    "streamlit>=1.35.0",
+    "pyyaml>=6.0.1",
+    "scipy>=1.13.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-cov>=5.0.0",
+    "black>=24.4.0",
+    "flake8>=7.0.0"
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

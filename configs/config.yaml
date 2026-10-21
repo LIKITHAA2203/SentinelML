@@ -1,0 +1,77 @@
+# SentinelML Configuration
+project:
+  name: "SentinelML"
+  version: "1.0.0"
+  description: "End-to-End Fraud Detection and ML Model Monitoring Platform"
+  random_seed: 42
+
+paths:
+  raw_data: "data/raw/creditcard.csv"
+  processed_dir: "data/processed"
+  artifacts_dir: "artifacts/models"
+  model_path: "artifacts/models/fraud_pipeline.joblib"
+  metadata_path: "artifacts/models/model_metadata.json"
+  monitoring_db: "artifacts/monitoring.db"
+  figures_dir: "reports/figures"
+  mlflow_tracking_uri: "sqlite:///artifacts/mlflow.db"
+
+data:
+  target_column: "Class"
+  features:
+    time: "Time"
+    amount: "Amount"
+    pca:
+      - "V1"
+      - "V2"
+      - "V3"
+      - "V4"
+      - "V5"
+      - "V6"
+      - "V7"
+      - "V8"
+      - "V9"
+      - "V10"
+      - "V11"
+      - "V12"
+      - "V13"
+      - "V14"
+      - "V15"
+      - "V16"
+      - "V17"
+      - "V18"
+      - "V19"
+      - "V20"
+      - "V21"
+      - "V22"
+      - "V23"
+      - "V24"
+      - "V25"
+      - "V26"
+      - "V27"
+      - "V28"
+  split:
+    train_size: 0.70
+    val_size: 0.15
+    test_size: 0.15
+    stratify: true
+
+training:
+  models:
+    - "dummy"
+    - "logistic_regression"
+    - "random_forest"
+    - "xgboost"
+  threshold_selection:
+    strategy: "f1_macro_or_pr_tradeoff"
+    target_precision_min: 0.85
+    default_threshold: 0.42
+
+monitoring:
+  reference_sample_size: 2000
+  recent_window_size: 500
+  drift_tests:
+    numerical: "ks_test"          # Kolmogorov-Smirnov test for continuous distributions
+    psi_metric: "population_stability_index"
+    p_value_threshold: 0.05
+    psi_warning_threshold: 0.10
+    psi_critical_threshold: 0.25

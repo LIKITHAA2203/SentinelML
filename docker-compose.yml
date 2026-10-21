@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # 1. FastAPI Real-time Inference Engine
+  api:
+    build: .
+    container_name: sentinelml-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app/src
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    command: uvicorn sentinelml.api.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+
+  # 2. Streamlit Operational & Monitoring Dashboard
+  dashboard:
+    build: .
+    container_name: sentinelml-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app/src
+      - API_URL=http://api:8000
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./reports:/app/reports
+    command: streamlit run src/sentinelml/dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # 3. Local MLflow Experiment Tracking Server
+  mlflow:
+    build: .
+    container_name: sentinelml-mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      - PYTHONPATH=/app/src
+    volumes:
+      - ./artifacts:/app/artifacts
+    command: mlflow ui --backend-store-uri sqlite:////app/artifacts/mlflow.db --host 0.0.0.0 --port 5000
+    restart: unless-stopped

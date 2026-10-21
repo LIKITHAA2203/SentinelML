@@ -1,0 +1,6 @@
+{
+  "name": "SentinelML — Fraud Detection & ML Monitoring Platform",
+  "description": "Production-ready credit card fraud detection system featuring MLflow experiment tracking, FastAPI inference, statistical drift monitoring (KS/PSI), and interactive dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
