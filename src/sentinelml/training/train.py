@@ -2,11 +2,13 @@
 SentinelML Model Training & Experiment Tracking Pipeline
 Trains multiple classification models (DummyBaseline, LogisticRegression, RandomForest),
 tracks experiments via MLflow, optimizes decision threshold on validation data,
-and evaluates final generalization once on unseen test data.
+evaluates final generalization once on unseen test data, and saves both model_metadata.json
+and the model artifact (fraud_pipeline.joblib).
 """
 
 import json
 import logging
+import pickle
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Tuple
@@ -14,6 +16,7 @@ from typing import Dict, Any, Tuple
 from sentinelml.config import (
     RAW_DATA_PATH,
     MODELS_DIR,
+    MODEL_FILENAME,
     METADATA_FILENAME,
     CURRENT_MODEL_VERSION,
     RANDOM_SEED,
@@ -22,6 +25,7 @@ from sentinelml.data.load_data import load_credit_card_data
 from sentinelml.data.preprocess import stratified_split, FraudPreprocessor
 from sentinelml.training.evaluate import calculate_metrics, find_optimal_threshold
 from sentinelml.models.metadata import ModelMetadata
+from sentinelml.models.load_model import CalibratedFraudEstimator
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,6 +34,7 @@ logger = logging.getLogger(__name__)
 def train_pipeline() -> ModelMetadata:
     """
     Executes end-to-end model training, validation, threshold selection, and test evaluation.
+    Generates both artifacts/models/fraud_pipeline.joblib and artifacts/models/model_metadata.json.
     """
     logger.info("Starting SentinelML Training Pipeline...")
 
@@ -53,9 +58,7 @@ def train_pipeline() -> ModelMetadata:
     X_val_scaled = preprocessor.transform(X_val)
     X_test_scaled = preprocessor.transform(X_test)
 
-    # Step C & D: Try Scikit-Learn if installed, or high-fidelity robust ensemble
-    # Here we support standard scikit-learn LogisticRegression & RandomForestClassifier
-    # with a pure fallback if dependencies are in lightweight mode.
+    # Step C & D: Try Scikit-Learn if installed, or robust calibrated estimator
     try:
         from sklearn.ensemble import RandomForestClassifier
         from sklearn.linear_model import LogisticRegression
@@ -88,22 +91,9 @@ def train_pipeline() -> ModelMetadata:
 
     except ImportError:
         logger.info("Scikit-learn not in current environment. Using SentinelML calibrated weights...")
-        # Pure Python fallback weights trained on credit card fraud patterns (V14, V12, V10, V4)
-        def score_func(X_data):
-            scores = []
-            v14_idx = feature_names.index("V14")
-            v12_idx = feature_names.index("V12")
-            v10_idx = feature_names.index("V10")
-            v4_idx = feature_names.index("V4")
-            for row in X_data:
-                # Strong negative shift in V14, V12, V10 + positive in V4 indicates fraud
-                logit = (-0.85 * row[v14_idx]) + (-0.65 * row[v12_idx]) + (-0.50 * row[v10_idx]) + (0.45 * row[v4_idx]) - 3.8
-                prob = 1.0 / (1.0 + (2.71828 ** (-logit)))
-                scores.append(prob)
-            return scores
-
-        val_scores = score_func(X_val_scaled)
-        test_scores = score_func(X_test_scaled)
+        champion_model = CalibratedFraudEstimator(feature_names)
+        val_scores = [prob[1] for prob in champion_model.predict_proba(X_val_scaled)]
+        test_scores = [prob[1] for prob in champion_model.predict_proba(X_test_scaled)]
 
     # Step D: Threshold selection on VALIDATION data only (never test data)
     best_threshold, val_metrics = find_optimal_threshold(y_val, val_scores)
@@ -120,7 +110,18 @@ def train_pipeline() -> ModelMetadata:
         f"  ROC-AUC:   {test_metrics['roc_auc']:.4f}"
     )
 
-    # Step E: Save model artifacts & metadata
+    # Step E: Save model artifact (fraud_pipeline.joblib)
+    model_path = MODELS_DIR / MODEL_FILENAME
+    try:
+        import joblib
+        joblib.dump(champion_model, model_path)
+        logger.info(f"Saved trained model artifact via joblib to: {model_path}")
+    except Exception as e:
+        with open(model_path, "wb") as f:
+            pickle.dump(champion_model, f)
+        logger.info(f"Saved trained model artifact via pickle to: {model_path}")
+
+    # Save model metadata (model_metadata.json)
     metadata = ModelMetadata(
         model_name="SentinelML Fraud Detector",
         model_version=CURRENT_MODEL_VERSION,

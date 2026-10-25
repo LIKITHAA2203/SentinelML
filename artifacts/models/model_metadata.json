@@ -35,7 +35,7 @@
     "V28",
     "Amount"
   ],
-  "training_timestamp": "2026-10-21T13:32:15.896306+00:00",
+  "training_timestamp": "2026-10-25T09:20:12.092466+00:00",
   "random_seed": 42,
   "train_samples": 3499,
   "val_samples": 749,

@@ -51,23 +51,35 @@ if app:
         allow_headers=["*"],
     )
 
+from sentinelml.models.load_model import load_trained_model
+
 # Service State
 model_metadata: ModelMetadata = None
 preprocessor: FraudPreprocessor = None
 store: PredictionStore = None
+trained_model = None
 
 
 def load_service_state():
-    global model_metadata, preprocessor, store
+    global model_metadata, preprocessor, store, trained_model
     store = PredictionStore()
-    metadata_path = MODELS_DIR / METADATA_FILENAME
+    trained_model, model_metadata = load_trained_model(MODELS_DIR)
 
-    if metadata_path.exists():
-        model_metadata = ModelMetadata.load(metadata_path)
+    if model_metadata:
         preprocessor = FraudPreprocessor.from_dict(model_metadata.preprocessor_stats)
-        logger.info(f"Loaded model version {model_metadata.model_version} from {metadata_path}")
+        logger.info(f"Loaded model version {model_metadata.model_version} from {MODELS_DIR / METADATA_FILENAME}")
     else:
-        logger.warning(f"Model metadata not found at {metadata_path}. Please run train.py first.")
+        logger.warning(f"Model metadata not found at {MODELS_DIR / METADATA_FILENAME}. Please run train.py first.")
+
+
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "SentinelML-API",
+        "version": "1.0.0",
+        "model_loaded": model_metadata is not None,
+        "database_connected": MONITORING_DB_PATH.exists() or True
+    }
 
 
 if app:
@@ -75,15 +87,7 @@ if app:
     def startup_event():
         load_service_state()
 
-    @app.get("/health", response_model=ServiceHealthResponse)
-    def health_check():
-        return {
-            "status": "healthy",
-            "service": "SentinelML-API",
-            "version": "1.0.0",
-            "model_loaded": model_metadata is not None,
-            "database_connected": MONITORING_DB_PATH.exists() or True
-        }
+    app.add_api_route("/health", health_check, methods=["GET"], response_model=ServiceHealthResponse)
 
     @app.get("/model-info", response_model=ModelInfoResponse)
     def get_model_info():
@@ -123,21 +127,39 @@ if app:
         # Apply zero-leakage preprocessor fitted on training set
         scaled_vector = preprocessor.transform([feature_vector])[0]
 
-        # Calibrated model risk score
-        v14_idx = ALL_FEATURES.index("V14")
-        v12_idx = ALL_FEATURES.index("V12")
-        v10_idx = ALL_FEATURES.index("V10")
-        v4_idx = ALL_FEATURES.index("V4")
+        # Model inference scoring
+        if trained_model and hasattr(trained_model, "predict_proba"):
+            try:
+                probabilities = trained_model.predict_proba([scaled_vector])[0]
+                risk_score = float(probabilities[1])
+            except Exception as e:
+                logger.warning(f"Error predicting with trained_model, using calibrated weights: {e}")
+                v14_idx = ALL_FEATURES.index("V14")
+                v12_idx = ALL_FEATURES.index("V12")
+                v10_idx = ALL_FEATURES.index("V10")
+                v4_idx = ALL_FEATURES.index("V4")
+                logit = (
+                    (-0.85 * scaled_vector[v14_idx])
+                    + (-0.65 * scaled_vector[v12_idx])
+                    + (-0.50 * scaled_vector[v10_idx])
+                    + (0.45 * scaled_vector[v4_idx])
+                    - 3.8
+                )
+                risk_score = 1.0 / (1.0 + (2.71828 ** (-logit)))
+        else:
+            v14_idx = ALL_FEATURES.index("V14")
+            v12_idx = ALL_FEATURES.index("V12")
+            v10_idx = ALL_FEATURES.index("V10")
+            v4_idx = ALL_FEATURES.index("V4")
+            logit = (
+                (-0.85 * scaled_vector[v14_idx])
+                + (-0.65 * scaled_vector[v12_idx])
+                + (-0.50 * scaled_vector[v10_idx])
+                + (0.45 * scaled_vector[v4_idx])
+                - 3.8
+            )
+            risk_score = 1.0 / (1.0 + (2.71828 ** (-logit)))
 
-        logit = (
-            (-0.85 * scaled_vector[v14_idx])
-            + (-0.65 * scaled_vector[v12_idx])
-            + (-0.50 * scaled_vector[v10_idx])
-            + (0.45 * scaled_vector[v4_idx])
-            - 3.8
-        )
-        # Logistic sigmoid risk scoring
-        risk_score = 1.0 / (1.0 + (2.71828 ** (-logit)))
         risk_score = max(0.0, min(1.0, risk_score))
 
         threshold = model_metadata.decision_threshold

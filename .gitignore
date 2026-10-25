@@ -49,9 +49,10 @@ mlartifacts/
 *.db
 monitoring.db
 
-# Model artifacts
-artifacts/models/*.joblib
+# Model artifacts (whitelist model_metadata.json and fraud_pipeline.joblib for deployment)
 artifacts/models/*.pkl
+!artifacts/models/model_metadata.json
+!artifacts/models/fraud_pipeline.joblib
 !artifacts/models/.gitkeep
 
 # Environment variables & secrets
